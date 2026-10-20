@@ -1,6 +1,6 @@
 # GridCraft: Rust → Go migration plan
 
-> **Status:** proposed 2026-10-20; G0 in progress · **Created:** 2026-10-20 · **Rust baseline:** `23829d8`
+> **Status:** proposed 2026-10-20; G0 done (gates, reference harness, CI); G1 next · **Created:** 2026-10-20 · **Rust baseline:** `23829d8`
 > (computernut43/gridcraft `main`)
 >
 > This plan covers the migration of GridCraft from Rust to Go. Go code lands component by component; no Rust
@@ -151,7 +151,7 @@ reference as §8 describes).
 | UI | `crates/ui-egui` | not started |
 | Desktop app, OS integration | `apps/gridcraft` | not started |
 | Browser build | `apps/gridcraft-web` | not started |
-| Gates (fmt, vet, nopanic, layers, assets, staticcheck, tests, wasm, licences, vuln) | `xtask` | not started |
+| Gates (fmt, vet, nopanic, layers, assets, staticcheck, tests, wasm, licences, vuln) | `xtask` | ported (G0): `go run ./tools/ci`; layers (with the `xlsx` format rule) and assets ported from `xtask` with its tests; shared gates from craft-libs. `internal/rustref` runs the baseline `gridcraft-cli` (checked against it: `eval`, `run --sample`, `convert` to JSON) |
 
 ## 7. Engineering rules for the Go code
 
@@ -219,4 +219,5 @@ Each milestone ends with its rows in §6 updated, a commit per task, and a push 
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-20 | minor | G0: Go module, `tools/ci`, `internal/rustref`, Go workflow (gates, Windows, macOS, reference), agent instructions |
 | 2026-10-20 | major | First version: audit at `23829d8`, decisions carried over from WordCraft, mapping, library decisions, numeric rules, milestones |

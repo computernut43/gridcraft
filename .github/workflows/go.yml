@@ -1,0 +1,69 @@
+name: Go
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['**.go', 'go.mod', 'go.sum', '**/testdata/**', 'ATTRIBUTION.md', 'assets/**', 'crates/**', '.github/workflows/go.yml']
+  pull_request:
+    paths: ['**.go', 'go.mod', 'go.sum', '**/testdata/**', 'ATTRIBUTION.md', 'assets/**', 'crates/**', '.github/workflows/go.yml']
+
+permissions:
+  contents: read
+
+env:
+  # The frozen Rust app the Go port is compared with (MIGRATION.md §2, §8).
+  RUST_BASELINE: 23829d8c67990e6b52a27bab6a38daf83e07dd54
+
+jobs:
+  gates:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # fmt, vet, nopanic, layers, assets, staticcheck, test, wasm, licences, vuln
+      - run: go run ./tools/ci
+
+  test:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go run ./tools/ci test
+
+  reference:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check out the Rust baseline
+        run: git worktree add "$RUNNER_TEMP/rust-baseline" "$RUST_BASELINE"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: ${{ runner.temp }}/rust-baseline
+          key: rust-baseline-${{ env.RUST_BASELINE }}
+      - name: Build the reference CLI
+        working-directory: ${{ runner.temp }}/rust-baseline
+        run: cargo build --release --locked -p gridcraft-cli
+      - name: Go tests against the reference
+        run: |
+          cli="$RUNNER_TEMP/rust-baseline/target/release/gridcraft-cli"
+          sum="$(sha256sum "$cli" | cut -d' ' -f1)"
+          export GRIDCRAFT_RUST_CLI="$cli" GRIDCRAFT_RUST_CLI_SHA256="$sum"
+          go test -count=1 ./...

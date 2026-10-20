@@ -1,6 +1,6 @@
 # GridCraft — instructions for agents
 
-GridCraft is a clean-room, open-source, Rust-native spreadsheet targeting Microsoft Excel parity — and superiority (speed, openness, agent control). It runs natively on macOS, Windows, Linux and BSD, and on the web via WASM. Siblings with the same conventions: `../designcraft` (InDesign-class, the closest reference), `../photocraft` (Photoshop), `../vectorcraft` (Illustrator), `../pdfcraft` (Acrobat), `../filmcraft` (Premiere), `../lightcraft` (Lightroom), `../effectcraft` (After Effects).
+GridCraft is a clean-room, open-source spreadsheet, written in Rust and being ported to Go ([`MIGRATION.md`](MIGRATION.md)), targeting Microsoft Excel parity — and superiority (speed, openness, agent control). It runs natively on macOS, Windows, Linux and BSD, and on the web via WASM. Siblings with the same conventions: `../designcraft` (InDesign-class, the closest reference), `../photocraft` (Photoshop), `../vectorcraft` (Illustrator), `../pdfcraft` (Acrobat), `../filmcraft` (Premiere), `../lightcraft` (Lightroom), `../effectcraft` (After Effects).
 
 Standards and learnings shared across the crafting apps live in `../../craftrules` (checked out next to the craft apps, or `storytold/craftrules`). Read its `AGENTS.md` at the start of a session, follow its standards, and contribute reusable learnings back there. Never code: repos don't share code.
 
@@ -10,10 +10,16 @@ Standards and learnings shared across the crafting apps live in `../../craftrule
 
 `plan/` is gitignored (local only).
 
+## Go migration (in progress)
+- The plan, decisions and parity checklist are in [`MIGRATION.md`](MIGRATION.md). New work goes to Go; the Rust tree (`crates/`, `apps/`, `xtask/`) is frozen at `23829d8` as the reference and only gets fixes needed for that role. It is removed in one reviewed cutover, never piecemeal.
+- Go module `github.com/computernut43/gridcraft` at the root: `internal/<unit>` per Rust crate, `cmd/` for apps, `tools/ci` for gates. Shared Craft code and tooling come from [`computernut43/craft-libs`](https://github.com/computernut43/craft-libs) (its Go module), required by commit; use an uncommitted `go.work` to develop both together.
+- Port one small component at a time: document the Rust behaviour and its tests first, port the tests, implement idiomatic Go, run the gates, then update the checklist in `MIGRATION.md`. Claim parity only after comparing with the Rust reference (`internal/rustref`; set `GRIDCRAFT_RUST_CLI` to a `gridcraft-cli` built from `23829d8`, and the per-package reference programs in `internal/*/testdata`).
+- Numbers: Rust and Go f64 differ (NaN in min/max, saturating casts, formatting, libm); follow `MIGRATION.md` §4.
+
 ## Assets and iconography — absolute rule
 **No Microsoft, Adobe, Avid, Autodesk (or any other vendor's) iconography, images, artwork, fonts, templates, themes or sample files — ever.** This is the most important rule in this repository; breaking it is a serious failure.
 - Every asset in the repo is original work by GridCraft contributors, or public domain / CC0, or open source / Creative Commons that allows redistribution (or licensed open source by the contributor who created it).
-- Every asset file has a row in [`ATTRIBUTION.md`](ATTRIBUTION.md) (author, source, licence). `cargo xtask assets` enforces it. Adding an asset without a row is a bug.
+- Every asset file has a row in [`ATTRIBUTION.md`](ATTRIBUTION.md) (author, source, licence). `cargo xtask assets` and `go run ./tools/ci assets` enforce it. Adding an asset without a row is a bug.
 - Prefer art generated in code: the UI icon set (`crates/ui-egui/src/icons.rs`), table and cell style palettes, themes and sample workbooks are drawn/defined in code and original.
 - Never copy Office's icons, ribbon artwork, theme XML, table-style definitions, templates, clip art or wording beyond feature names. Excel feature *names* (menu labels, function names) are fine.
 - Screenshots of Microsoft software are never committed (they live only in `plan/excel/screenshots/`).
@@ -28,6 +34,7 @@ People trust GridCraft with their numbers; a crash loses their work. **This outr
 - **Last-resort guard:** `Session::execute` catches escaped panics and restores the workbook. It's a safety net, not a licence.
 - **Prove it:** every crash fix lands with a regression test (`tests::every_command_survives_empty_params` fuzzes every command; `crates/engine/tests/command_sequence_fuzz.rs` fuzzes random command sequences against undo/redo, XLSX round-trip and full-recalc invariants; soak it with `GRIDCRAFT_FUZZ_SEEDS`/`GRIDCRAFT_FUZZ_STEPS`, replay with `GRIDCRAFT_FUZZ_SEED`).
 - Crates carry `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]`.
+- **Go:** the same standard, enforced by craft-libs' `devtools/nopanic` (no `panic`, no `Must…` with non-constant arguments, no `log.Panic*`/`log.Fatal*`, no `os.Exit` outside `package main`). Go can still panic implicitly, so `recover` guards every boundary (`Session.Execute`, I/O, MCP, control channel), indexing of input-derived data is bounds-checked, and every reader has a `go test -fuzz` target.
 
 ## Non-negotiables
 - **Clean-room.** Microsoft Excel is installed on the dev machine and may be *observed* black-box: run it, use its UI with synthetic workbooks, take screenshots (by window id) stored only under `plan/excel/screenshots/`. Never read, disassemble or copy anything inside the Office bundle, never commit files produced by Excel, never copy GPL/AGPL/LGPL code (LibreOffice, Gnumeric…). Function behaviour comes from public documentation and observation.
@@ -35,10 +42,10 @@ People trust GridCraft with their numbers; a crash loses their work. **This outr
 - **Test corpora** (real Excel-authored files) live in a separate corpus repo, fetched pinned and sha256-verified (craftrules `standards/test-corpora.md`). Never commit large binary fixtures; build test workbooks in code.
 - **Everything is a command.** User-visible behaviour = a command in `crates/engine/src/cmd/*` (id, label, ribbon path, shortcut, params doc, `enabled`, `run`) + tests. Ids follow Excel's ribbon (`home.bold`, `insert.chart`, `data.sortAscending`) plus primitives (`cell.set`, `selection.set`, `range.setValues`). UI-only commands live in `crates/ui-egui`. The control channel, CLI and MCP reach all of them.
 - **Programmatic calls never open dialogs**: a command with empty params runs with defaults or returns an error; only menu-style invocation opens a dialog (`UiRequest::Dialog`).
-- **Layering** is enforced by `cargo xtask layers`: `core`/`numfmt` (L0) → `formula`/`functions` (L1) → `model`/`calc`/`xlsx` (L2) → `chart` (L3) → `engine` (L5) → `ui-egui`/`mcp` (L6) → `apps/*` (L7). Nothing below L6 depends on egui/eframe/winit/rfd. **The UI crate is swappable.**
+- **Layering** is enforced by `cargo xtask layers` and, for Go, `go run ./tools/ci layers` (table in `tools/ci/layers.go`): `core`/`numfmt` (L0) → `formula`/`functions` (L1) → `model`/`calc`/`xlsx` (L2) → `chart` (L3) → `engine` (L5) → `ui-egui`/`mcp` (L6) → `apps/*` (L7). Nothing below L6 depends on egui/eframe/winit/rfd. **The UI crate is swappable.**
 - **The UI is thin**: panels read engine state and act through `app.run(id, params)`. Colours come from `theme::Tokens`.
-- **Rust only** (no handwritten JS/TS). **Never break wasm** (`cargo xtask wasm`).
-- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, assets, layers, wasm). One task id per commit (`M2.1: borders gallery`).
+- **Rust and Go only** while the port runs, and Go for new work (no handwritten JS/TS; Go's own `wasm_exec.js` is used as shipped). **Never break wasm** (`cargo xtask wasm`; `go run ./tools/ci wasm`).
+- **Quality gates** before every commit: for Go changes `go run ./tools/ci` (gofmt, vet, nopanic, layers, assets, staticcheck, tests, wasm, dependency licences, govulncheck; run one with `go run ./tools/ci <gate>`); for Rust changes `cargo xtask ci` (fmt, clippy -D warnings, tests, assets, layers, wasm). `govulncheck` needs access to vuln.go.dev; where the network blocks it, CI runs it. One task id per commit (`G1.1: date serials`).
 
 ## Running and looking at the app
 - `cargo run --release -p gridcraft -- --sample sales --control 7979` (sample workbook + control channel).

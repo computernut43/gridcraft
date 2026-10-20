@@ -8,3 +8,10 @@ plan/
 /.claude/
 /target-*/
 /craft-fonts/
+
+# Go port: reference programs built from testdata (MIGRATION.md §8)
+/internal/*/testdata/*-oracle/target/
+/internal/*/testdata/*-oracle/Cargo.lock
+# Local multi-module development (never committed)
+go.work
+go.work.sum
